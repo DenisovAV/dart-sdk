@@ -167,9 +167,14 @@ class ExitCodeHandler {
     running_ = false;
 
     // Fork to wake up waitpid.
+
+    //Not supported in tvOS
+
+    /*
     if (TEMP_FAILURE_RETRY(fork()) == 0) {
       exit(0);
     }
+    */
 
     monitor_->Notify();
 
@@ -305,7 +310,11 @@ class ProcessStarter {
     }
 
     // Fork to create the new process.
-    pid_t pid = TEMP_FAILURE_RETRY(fork());
+
+    //Not supported in tvOS
+
+    //pid_t pid = TEMP_FAILURE_RETRY(fork());
+    pid_t pid = -1; //temporally set to -1
     if (pid < 0) {
       // Failed to fork.
       return CleanupAndReturnError();
@@ -475,7 +484,9 @@ class ProcessStarter {
     }
 #endif
 
-    execvp(path_, const_cast<char* const*>(program_arguments_));
+    //Not supported in tvOS
+
+    //execvp(path_, const_cast<char* const*>(program_arguments_));
     ReportChildError();
   }
 
@@ -496,7 +507,11 @@ class ProcessStarter {
       ASSERT(mode_ == kDetachedWithStdio);
     }
     // Fork once more to start a new session.
-    pid_t pid = TEMP_FAILURE_RETRY(fork());
+
+    //Not supported in tvOS
+
+    //pid_t pid = TEMP_FAILURE_RETRY(fork());
+    pid_t pid = -1; //temporally set -1
     if (pid < 0) {
       ReportChildError();
     } else if (pid == 0) {
@@ -505,7 +520,11 @@ class ProcessStarter {
         ReportChildError();
       } else {
         // Do a final fork to not be the session leader.
-        pid = TEMP_FAILURE_RETRY(fork());
+
+        //Not supported in tvOS
+
+        //pid = TEMP_FAILURE_RETRY(fork());
+        pid = -1; //temporally set -1
         if (pid < 0) {
           ReportChildError();
         } else if (pid == 0) {
@@ -530,7 +549,10 @@ class ProcessStarter {
 
           // Report the final PID and do the exec.
           ReportPid(getpid());  // getpid cannot fail.
-          execvp(path_, const_cast<char* const*>(program_arguments_));
+
+          //Not supported in tvOS
+
+          //execvp(path_, const_cast<char* const*>(program_arguments_));
           ReportChildError();
         } else {
           // Exit the intermeiate process.
@@ -1089,39 +1111,6 @@ void Process::ClearSignalHandler(intptr_t signal, Dart_Port port) {
     handler = next;
   }
   if (unlisten) {
-    struct sigaction act = {};
-    act.sa_handler = SIG_DFL;
-    VOID_NO_RETRY_EXPECTED(sigaction(signal, &act, NULL));
-  }
-}
-
-void Process::ClearSignalHandlerByFd(intptr_t fd, Dart_Port port) {
-  ThreadSignalBlocker blocker(kSignalsCount, kSignals);
-  MutexLocker lock(signal_mutex);
-  SignalInfo* handler = signal_handlers;
-  bool unlisten = true;
-  intptr_t signal = -1;
-  while (handler != NULL) {
-    bool remove = false;
-    if (handler->fd() == fd) {
-      if ((port == ILLEGAL_PORT) || (handler->port() == port)) {
-        if (signal_handlers == handler) {
-          signal_handlers = handler->next();
-        }
-        handler->Unlink();
-        remove = true;
-        signal = handler->signal();
-      } else {
-        unlisten = false;
-      }
-    }
-    SignalInfo* next = handler->next();
-    if (remove) {
-      delete handler;
-    }
-    handler = next;
-  }
-  if (unlisten && (signal != -1)) {
     struct sigaction act = {};
     act.sa_handler = SIG_DFL;
     VOID_NO_RETRY_EXPECTED(sigaction(signal, &act, NULL));

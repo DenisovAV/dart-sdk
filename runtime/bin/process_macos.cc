@@ -167,14 +167,12 @@ class ExitCodeHandler {
     running_ = false;
 
     // Fork to wake up waitpid.
-
-    //Not supported in tvOS
-
-    /*
+    //AppTv
+    #if !HOST_OS_IOS
     if (TEMP_FAILURE_RETRY(fork()) == 0) {
       exit(0);
     }
-    */
+    #endif
 
     monitor_->Notify();
 
@@ -310,11 +308,14 @@ class ProcessStarter {
     }
 
     // Fork to create the new process.
+    //AppTv
+    pid_t pid = -1;
 
-    //Not supported in tvOS
+    #if !HOST_OS_IOS
+        pid = TEMP_FAILURE_RETRY(fork());
+    #endif
 
-    //pid_t pid = TEMP_FAILURE_RETRY(fork());
-    pid_t pid = -1; //temporally set to -1
+
     if (pid < 0) {
       // Failed to fork.
       return CleanupAndReturnError();
@@ -484,9 +485,10 @@ class ProcessStarter {
     }
 #endif
 
-    //Not supported in tvOS
+  #if !HOST_OS_IOS
+      execvp(path_, const_cast<char* const*>(program_arguments_));
+  #endif
 
-    //execvp(path_, const_cast<char* const*>(program_arguments_));
     ReportChildError();
   }
 
@@ -507,11 +509,14 @@ class ProcessStarter {
       ASSERT(mode_ == kDetachedWithStdio);
     }
     // Fork once more to start a new session.
+    //AppTv
+    pid_t pid = -1;
 
-    //Not supported in tvOS
+    #if !HOST_OS_IOS
+        pid = TEMP_FAILURE_RETRY(fork());
+    #endif
 
-    //pid_t pid = TEMP_FAILURE_RETRY(fork());
-    pid_t pid = -1; //temporally set -1
+
     if (pid < 0) {
       ReportChildError();
     } else if (pid == 0) {
@@ -520,11 +525,11 @@ class ProcessStarter {
         ReportChildError();
       } else {
         // Do a final fork to not be the session leader.
-
-        //Not supported in tvOS
-
-        //pid = TEMP_FAILURE_RETRY(fork());
-        pid = -1; //temporally set -1
+        //AppTv
+        pid = -1;
+        #if !HOST_OS_IOS
+           pid = TEMP_FAILURE_RETRY(fork());
+        #endif
         if (pid < 0) {
           ReportChildError();
         } else if (pid == 0) {
@@ -549,10 +554,10 @@ class ProcessStarter {
 
           // Report the final PID and do the exec.
           ReportPid(getpid());  // getpid cannot fail.
-
-          //Not supported in tvOS
-
-          //execvp(path_, const_cast<char* const*>(program_arguments_));
+          //AppTv
+#if !HOST_OS_IOS
+          execvp(path_, const_cast<char* const*>(program_arguments_));
+#endif
           ReportChildError();
         } else {
           // Exit the intermeiate process.
@@ -1111,6 +1116,39 @@ void Process::ClearSignalHandler(intptr_t signal, Dart_Port port) {
     handler = next;
   }
   if (unlisten) {
+    struct sigaction act = {};
+    act.sa_handler = SIG_DFL;
+    VOID_NO_RETRY_EXPECTED(sigaction(signal, &act, NULL));
+  }
+}
+
+void Process::ClearSignalHandlerByFd(intptr_t fd, Dart_Port port) {
+  ThreadSignalBlocker blocker(kSignalsCount, kSignals);
+  MutexLocker lock(signal_mutex);
+  SignalInfo* handler = signal_handlers;
+  bool unlisten = true;
+  intptr_t signal = -1;
+  while (handler != NULL) {
+    bool remove = false;
+    if (handler->fd() == fd) {
+      if ((port == ILLEGAL_PORT) || (handler->port() == port)) {
+        if (signal_handlers == handler) {
+          signal_handlers = handler->next();
+        }
+        handler->Unlink();
+        remove = true;
+        signal = handler->signal();
+      } else {
+        unlisten = false;
+      }
+    }
+    SignalInfo* next = handler->next();
+    if (remove) {
+      delete handler;
+    }
+    handler = next;
+  }
+  if (unlisten && (signal != -1)) {
     struct sigaction act = {};
     act.sa_handler = SIG_DFL;
     VOID_NO_RETRY_EXPECTED(sigaction(signal, &act, NULL));
